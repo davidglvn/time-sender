@@ -11,12 +11,14 @@ The script need this values to be set in order to work properly:
 * FRESHDESK_URL_PREFIX - Freshdesk API URL
 * FRESHDESK_API_TOKEN - Freshdesk API token
 * DEFAULT_EMAIL - Default email to use for new tickets
+
 ## Automatic Ticket creation
 By default for each entry created new ticket in Freshdesk. After the ticket is created Toggl time entry receive two new tags:
 * 'freshdesk' - meaning that this time entry already in Freshdesk
 * 'ticket-DDDD' - 'ticket-' string with ticket ID
 
 Freshdesk time entry store in the note Toggl time entry ID and description.
+
 ### Ticket requester
 Script tries to find requester email for the ticket by taking Toggl time entry client name and compering to Freshdesk company name and picking first contact in the company contact list.
 
@@ -29,6 +31,7 @@ To add time entry to existing ticket add new tag in Toggl 'ticket-DDDD', where D
 
 ## Additional ticket options
 When creating new ticket in Freshdesk the script look for type, status and priority tags.
+
 ### Type
 * *Task* - default
 * Question
@@ -36,11 +39,13 @@ When creating new ticket in Freshdesk the script look for type, status and prior
 * Problem
 * Lead
 * Meeting
+
 ### Status
 * *Open* - default
 * Pending
 * Resolved
 * Closed - default for Meeting type
+
 ### Priority
 * *Low* - default
 * Medium
