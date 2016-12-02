@@ -70,7 +70,7 @@ def create_new_ticket(time_entry, agent_id):
                 priority = tag.lower().title()
                 continue
             # Or maybe email address of the requester as tag
-            if re.match(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', tag):
+            if re.match(r'[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}', tag):
                 logging.debug('It\'s an email')
                 email = tag
     except KeyError:
