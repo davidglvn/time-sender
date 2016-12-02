@@ -13,9 +13,10 @@ The script need this values to be set in order to work properly:
 * DEFAULT_EMAIL - Default email to use for new tickets
 
 ## Automatic Ticket creation
-By default for each entry created new ticket in Freshdesk. After the ticket is created Toggl time entry receive two new tags:
+Only entries with 'ticket-DDDD' or 'new-ticket' tag will be checked
 * 'freshdesk' - meaning that this time entry already in Freshdesk
 * 'ticket-DDDD' - 'ticket-' string with ticket ID
+* 'new-ticket' - force to create new Freshdesk ticket
 
 Freshdesk time entry store in the note Toggl time entry ID and description.
 

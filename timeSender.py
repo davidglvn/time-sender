@@ -42,6 +42,120 @@ except NameError:
     logging.error('On of the Default Variable is not defined')
     exit(2)
 
+
+def create_new_ticket():
+    # Set some default info for the ticket
+    email = DEFAULT_EMAIL
+    ticket_type = 'Task'
+    status = freshdesk_status['Open']
+    priority = freshdesk_priority['Low']
+
+    logging.debug('Going over tags')
+    try:
+        for tag in time_entry['tags']:
+            logging.debug('Tag - {0}'.format(tag))
+            # Check if we have special type for this time entry
+            if tag.lower() in ['question', 'incident', 'task', 'problem', 'lead', 'meeting']:
+                logging.debug('It\'s type tag')
+                # If the time entry is for meeting, we will close the ticket
+                if tag.lower() == 'meeting':
+                    logging.debug('It\'s meeting tag')
+                    status = freshdesk_status['Closed']
+                ticket_type = tag.lower().title()
+                continue
+            # Check if we have some priority
+            if tag.lower() in ['low', 'high', 'medium', 'urgent']:
+                logging.debug('It\'s priority tag')
+                priority = tag.lower().title()
+                continue
+            # Or maybe email address of the requester as tag
+            if re.match(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', tag):
+                logging.debug('It\'s an email')
+                email = tag
+    except KeyError:
+        pass
+
+    # Try to find email for the ticket in case there is no email in the tag
+    if email == DEFAULT_EMAIL:
+        # Get all the projects from Toggl
+        get_projects_url = TOOGL_URL_PREFIX + 'projects/' + str(time_entry['pid'])
+        logging.debug(get_projects_url)
+        r_toggl_project = requests.get(get_projects_url,
+                                       auth=(TOOGL_API_TOKEN, 'api_token'),
+                                       headers=headers)
+        if r_toggl_project.status_code not in [200, 201]:
+            logging.error('Failed to get project data in Toggl API')
+            logging.error(r_toggl_project.text)
+        else:
+            logging.debug(r_toggl_project.json())
+            project_id = str(r_toggl_project.json()['data']['cid'])
+            logging.debug('Found project id {0}'.format(project_id))
+            # Get all the clients for the project in Toggl
+            get_clients_url = TOOGL_URL_PREFIX + 'clients/' + project_id
+            logging.debug(get_clients_url)
+            r_toggl_client = requests.get(get_clients_url,
+                                          auth=(TOOGL_API_TOKEN, 'api_token'),
+                                          headers=headers)
+            if r_toggl_client.status_code not in [200, 201]:
+                logging.error('Failed to get client data in Toggl API')
+                logging.error(r_toggl_client.text)
+            else:
+                logging.debug(r_toggl_client.json())
+                client_name = r_toggl_client.json()['data']['name']
+                logging.debug('Got client name in Toggl {0}'.format(client_name))
+                # Get all the companies in Freshdesk
+                get_companies_url = FRESHDESK_URL_PREFIX + 'companies'
+                logging.debug(get_companies_url)
+                r_freshdesk_companies = requests.get(get_companies_url,
+                                                     auth=(FRESHDESK_API_TOKEN, 'api_token'),
+                                                     headers=headers)
+                if r_freshdesk_companies.status_code not in [200, 201]:
+                    logging.error('Failed to get companies list in Freshdesk API')
+                    logging.error(r_freshdesk_companies.text)
+                else:
+                    # Find Toggl client name in Freshdesk companies
+                    for company in r_freshdesk_companies.json():
+                        if client_name == company['name']:
+                            logging.debug('Found the company in Freshdesk API {0}'.format(company['id']))
+                            # Get all the contacts in Freshdesk for the company
+                            get_contacts_url = FRESHDESK_URL_PREFIX + 'contacts?company_id=' + str(company['id'])
+                            logging.debug(get_contacts_url)
+                            r_freshdesk_contacts = requests.get(get_contacts_url,
+                                                                auth=(FRESHDESK_API_TOKEN, 'api_token'),
+                                                                headers=headers)
+                            if r_freshdesk_contacts.status_code not in [200, 201]:
+                                logging.error('Failed to get contacts for the company {0} in Freshdesk API'.
+                                              format(company['id']))
+                                logging.error(r_freshdesk_contacts.text)
+                            else:
+                                for contact in r_freshdesk_contacts.json():
+                                    # Find the first email
+                                    email = contact['email']
+                                    logging.debug('Found user to create ticket with email {0}'.format(email))
+                                    break
+    # Generate new ticket payload
+    new_ticket_payload = {
+        'email': email,
+        'subject': time_entry['description'],
+        'type': ticket_type,
+        'status': status,
+        'priority': priority,
+        'description': time_entry['description'],
+        'responder_id': agent_id,
+    }
+    # Create new ticket in Freshdesk
+    post_tickets_url = FRESHDESK_URL_PREFIX + 'tickets'
+    r_freshdesk_tickets_post = requests.post(post_tickets_url,
+                                             data=json.dumps(new_ticket_payload),
+                                             auth=(FRESHDESK_API_TOKEN, 'api_token'),
+                                             headers=headers)
+    if r_freshdesk_tickets_post.status_code not in [200, 201]:
+        logging.error('Failed to create ticket in Freshdesk API')
+        logging.error(r_freshdesk_tickets_post.text)
+        return False
+    else:
+        return str(r_freshdesk_tickets_post.json()['id'])
+
 start_date = datetime.datetime.now() - datetime.timedelta(days=TOOGL_DAY_TO_GET)
 end_date = datetime.datetime.now()
 headers = {'content-type': 'application/json'}
@@ -84,132 +198,27 @@ for time_entry in r_toggl.json():
         pass
 
     try:
-        # Look for ticket ID in tags
-        # If there is no tags KeyError exception is raised
-        # If there is no ticket ID in tags IndexError exception is raised
-        ticket_id = [tid for tid in time_entry['tags'] if 'ticket-' in tid][0][7:]
-        logging.info('Found ticket ID #{0} in tag'.format(ticket_id))
-    except (KeyError, IndexError):
+        if 'new-ticket' not in time_entry['tags']:
+            # Look for ticket ID in tags
+            # If there is no tags KeyError exception is raised
+            # If there is no ticket ID in tags IndexError exception is raised
+            ticket_id = [tid for tid in time_entry['tags'] if 'ticket-' in tid][0][7:]
+            logging.info('Found ticket ID #{0} in tag'.format(ticket_id))
+        else:
+            time_entry['tags'].remove('new-ticket')
+            ticket_id = create_new_ticket()
+    except KeyError:
+        logging.info('Non Freshdesk time entry, skipping it')
+        continue
+    except IndexError:
         try:
             # Look if we have ticket ID in description, if there is not ticket ID in tags
             ticket_pattern = re.compile(r".*#(?P<ticket>[0-9]+).*")
             match = ticket_pattern.match(time_entry['description'])
             ticket_id = match.group("ticket")
             logging.info('Found ticket ID #{0} in description'.format(ticket_id))
-            new_ticket = False
         except AttributeError:
-            logging.info('Couldn\'t find ticket ID, creating new ticket')
-            # Set some default info for the ticket
-            email = DEFAULT_EMAIL
-            ticket_type = 'Task'
-            status = freshdesk_status['Open']
-            priority = freshdesk_priority['Low']
-
-            logging.debug('Going over tags')
-            try:
-                for tag in time_entry['tags']:
-                    logging.debug('Tag - {0}'.format(tag))
-                    # Check if we have special type for this time entry
-                    if tag.lower() in ['question', 'incident', 'task', 'problem', 'lead', 'meeting']:
-                        logging.debug('It\'s type tag')
-                        # If the time entry is for meeting, we will close the ticket
-                        if tag.lower() == 'meeting':
-                            logging.debug('It\'s meeting tag')
-                            status = freshdesk_status['Closed']
-                        ticket_type = tag.lower().title()
-                        continue
-                    # Check if we have some priority
-                    if tag.lower() in ['low', 'high', 'medium', 'urgent']:
-                        logging.debug('It\'s priority tag')
-                        priority = tag.lower().title()
-                        continue
-                    # Or maybe email address of the requester as tag
-                    if re.match(r'[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}', tag):
-                        logging.debug('It\'s an email')
-                        email = tag
-            except KeyError:
-                pass
-
-            # Try to find email for the ticket in case there is no email in the tag
-            if email == DEFAULT_EMAIL:
-                # Get all the projects from Toggl
-                get_url = TOOGL_URL_PREFIX + 'projects/' + str(time_entry['pid'])
-                logging.debug(get_url)
-                r_toggl_project = requests.get(get_url,
-                                               auth=(TOOGL_API_TOKEN, 'api_token'),
-                                               headers=headers)
-                if r_toggl_project.status_code not in [200, 201]:
-                    logging.error('Failed to get project data in Toggl API')
-                    logging.error(r_toggl_project.text)
-                else:
-                    logging.debug(r_toggl_project.json())
-                    project_id = str(r_toggl_project.json()['data']['cid'])
-                    logging.debug('Found project id {0}'.format(project_id))
-                    # Get all the clients for the project in Toggl
-                    get_url = TOOGL_URL_PREFIX + 'clients/' + project_id
-                    logging.debug(get_url)
-                    r_toggl_client = requests.get(get_url,
-                                                  auth=(TOOGL_API_TOKEN, 'api_token'),
-                                                  headers=headers)
-                    if r_toggl_client.status_code not in [200, 201]:
-                        logging.error('Failed to get client data in Toggl API')
-                        logging.error(r_toggl_client.text)
-                    else:
-                        logging.debug(r_toggl_client.json())
-                        client_name = r_toggl_client.json()['data']['name']
-                        logging.debug('Got client name in Toggl {0}'.format(client_name))
-                        # Get all the companies in Freshdesk
-                        get_url = FRESHDESK_URL_PREFIX + 'companies'
-                        logging.debug(get_url)
-                        r_freshdesk_companies = requests.get(get_url,
-                                                             auth=(FRESHDESK_API_TOKEN, 'api_token'),
-                                                             headers=headers)
-                        if r_freshdesk_companies.status_code not in [200, 201]:
-                            logging.error('Failed to get companies list in Freshdesk API')
-                            logging.error(r_freshdesk_companies.text)
-                        else:
-                            # Find Toggl client name in Freshdesk companies
-                            for company in r_freshdesk_companies.json():
-                                if client_name == company['name']:
-                                    logging.debug('Found the company in Freshdesk API {0}'.format(company['id']))
-                                    # Get all the contacts in Freshdesk for the company
-                                    get_url = FRESHDESK_URL_PREFIX + 'contacts?company_id=' + str(company['id'])
-                                    logging.debug(get_url)
-                                    r_freshdesk_contacts = requests.get(get_url,
-                                                                        auth=(FRESHDESK_API_TOKEN, 'api_token'),
-                                                                        headers=headers)
-                                    if r_freshdesk_contacts.status_code not in [200, 201]:
-                                        logging.error('Failed to get contacts for the company {0} in Freshdesk API'.
-                                                      format(company['id']))
-                                        logging.error(r_freshdesk_contacts.text)
-                                    else:
-                                        for contact in r_freshdesk_contacts.json():
-                                            # Find the first email
-                                            email = contact['email']
-                                            logging.debug('Found user to create ticket with email {0}'.format(email))
-                                            break
-            # Generate new ticket payload
-            new_ticket = {
-                'email': email,
-                'subject': time_entry['description'],
-                'type': ticket_type,
-                'status': status,
-                'priority': priority,
-                'description': time_entry['description'],
-                'responder_id': agent_id,
-            }
-            # Create new ticket in Freshdesk
-            post_url = FRESHDESK_URL_PREFIX + 'tickets'
-            r_freshdesk_post = requests.post(post_url,
-                                             data=json.dumps(new_ticket),
-                                             auth=(FRESHDESK_API_TOKEN, 'api_token'),
-                                             headers=headers)
-            if r_freshdesk_post.status_code not in [200, 201]:
-                logging.error('Failed to create ticket in Freshdesk API')
-                logging.error(r_freshdesk_post.text)
-                continue
-            else:
-                ticket_id = str(r_freshdesk_post.json()['id'])
+            continue
     finally:
         logging.info('Adding new time entry to ticket #{0}'.format(ticket_id))
         # Generate Freshdesk time format for duration
