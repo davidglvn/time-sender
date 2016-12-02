@@ -304,7 +304,7 @@ def scan_toogl_result(time_entries, agent_id):
 
 
 if __name__ == '__main__':
-    start_time = datetime.datetime.now()
+    start_time = datetime.datetime.now() - datetime.timedelta(hours=7)
     while True:
         if start_time <= datetime.datetime.now() - datetime.timedelta(hours=6):
             start_time = datetime.datetime.now()
