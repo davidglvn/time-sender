@@ -3,13 +3,14 @@ import datetime
 import json
 import logging
 import re
+import os
 
-TOOGL_DAY_TO_GET = 3
-TOOGL_URL_PREFIX = 'https://www.toggl.com/api/v8/'
-TOOGL_API_TOKEN = ''
-FRESHDESK_URL_PREFIX = 'https://YOUR_DOMAIN.freshdesk.com/api/v2/'
-FRESHDESK_API_TOKEN = ''
-DEFAULT_EMAIL = ''
+TOOGL_DAY_TO_GET = int(os.getenv('TOOGL_DAY_TO_GET', '3'))
+TOOGL_URL_PREFIX = os.getenv('TOOGL_URL_PREFIX', 'https://www.toggl.com/api/v8/')
+TOOGL_API_TOKEN = os.getenv('TOOGL_API_TOKEN', False)
+FRESHDESK_URL_PREFIX = os.getenv('FRESHDESK_URL_PREFIX', 'https://YOUR_DOMAIN.freshdesk.com/api/v2/')
+FRESHDESK_API_TOKEN = os.getenv('FRESHDESK_API_TOKEN', False)
+DEFAULT_EMAIL = os.getenv('DEFAULT_EMAIL', False)
 
 freshdesk_status = {
     'Open': 2,
