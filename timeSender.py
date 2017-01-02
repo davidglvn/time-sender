@@ -234,73 +234,73 @@ def scan_toogl_result(time_entries, agent_id):
                 logging.info('Found ticket ID #{0} in description'.format(ticket_id))
             except AttributeError:
                 continue
-        finally:
-            logging.info('Adding new time entry to ticket #{0}'.format(ticket_id))
-            # Generate Freshdesk time format for duration
-            hh = str(int(time_entry['duration'] / 3600))
-            if len(hh) != 2:
-                hh = '0' + hh
-            mm = str(int(time_entry['duration'] % 3600 / 60))
-            if len(mm) != 2:
-                mm = '0' + mm
 
-            # By default all the time entries in Toggl are billable, as I don't use pro version yet, I can't use this
-            # billable function in Toggl, so I'm marking non billable with 'notbillable' tag
-            billable = True
-            new_toggl_time_entry = {'time_entry': {'tags': []}}
-            # To identify time entries that were added to Freshdesk they marked with tag 'freshdesk'
-            try:
-                # Add the 'freshdesk' tag to existing tags
-                time_entry['tags'].append('freshdesk')
-                new_toggl_time_entry['time_entry']['tags'] = time_entry['tags']
-                # Check if it's not billable time entry
-                if 'notbillable' in time_entry['tags']:
-                    billable = False
-            except KeyError:
-                # If there is no tags, create new
-                new_toggl_time_entry['time_entry']['tags'] = ['freshdesk']
-            if 'ticket-' + str(ticket_id) not in new_toggl_time_entry['time_entry']:
-                # If it's new ticket, add ticket ID to tags
-                new_toggl_time_entry['time_entry']['tags'].append('ticket-' + str(ticket_id))
-            # Generate new payload for Freshdesk time entry
-            new_time_entry = {
-                'note': 'Toggl ID :' + str(time_entry['id']) + '\n' + time_entry['description'],
-                'agent_id': agent_id,
-                'billable': billable,
-                'executed_at': time_entry['start'][:-6],
-                'time_spent': hh + ':' + mm
-            }
-            # Add new time entry to Freshdesk ticket
-            post_url = FRESHDESK_URL_PREFIX + 'tickets/' + ticket_id + '/time_entries'
-            logging.debug(post_url)
-            headers = {'content-type': 'application/json'}
-            r_freshdesk_post = requests.post(post_url,
-                                             data=json.dumps(new_time_entry),
-                                             auth=(FRESHDESK_API_TOKEN, 'api_token'),
-                                             headers=headers)
-            if r_freshdesk_post.status_code not in [200, 201]:
-                logging.error('Failed to update ticket #{0} in Freshdesk with new time entry'.format(ticket_id))
-                logging.error(r_freshdesk_post.text)
-                logging.debug(new_time_entry)
+        logging.info('Adding new time entry to ticket #{0}'.format(ticket_id))
+        # Generate Freshdesk time format for duration
+        hh = str(int(time_entry['duration'] / 3600))
+        if len(hh) != 2:
+            hh = '0' + hh
+        mm = str(int(time_entry['duration'] % 3600 / 60))
+        if len(mm) != 2:
+            mm = '0' + mm
+
+        # By default all the time entries in Toggl are billable, as I don't use pro version yet, I can't use this
+        # billable function in Toggl, so I'm marking non billable with 'notbillable' tag
+        billable = True
+        new_toggl_time_entry = {'time_entry': {'tags': []}}
+        # To identify time entries that were added to Freshdesk they marked with tag 'freshdesk'
+        try:
+            # Add the 'freshdesk' tag to existing tags
+            time_entry['tags'].append('freshdesk')
+            new_toggl_time_entry['time_entry']['tags'] = time_entry['tags']
+            # Check if it's not billable time entry
+            if 'notbillable' in time_entry['tags']:
+                billable = False
+        except KeyError:
+            # If there is no tags, create new
+            new_toggl_time_entry['time_entry']['tags'] = ['freshdesk']
+        if 'ticket-' + str(ticket_id) not in new_toggl_time_entry['time_entry']:
+            # If it's new ticket, add ticket ID to tags
+            new_toggl_time_entry['time_entry']['tags'].append('ticket-' + str(ticket_id))
+        # Generate new payload for Freshdesk time entry
+        new_time_entry = {
+            'note': 'Toggl ID :' + str(time_entry['id']) + '\n' + time_entry.get('description'),
+            'agent_id': agent_id,
+            'billable': billable,
+            'executed_at': time_entry['start'][:-6],
+            'time_spent': hh + ':' + mm
+        }
+        # Add new time entry to Freshdesk ticket
+        post_url = FRESHDESK_URL_PREFIX + 'tickets/' + ticket_id + '/time_entries'
+        logging.debug(post_url)
+        headers = {'content-type': 'application/json'}
+        r_freshdesk_post = requests.post(post_url,
+                                         data=json.dumps(new_time_entry),
+                                         auth=(FRESHDESK_API_TOKEN, 'api_token'),
+                                         headers=headers)
+        if r_freshdesk_post.status_code not in [200, 201]:
+            logging.error('Failed to update ticket #{0} in Freshdesk with new time entry'.format(ticket_id))
+            logging.error(r_freshdesk_post.text)
+            logging.debug(new_time_entry)
+        else:
+            logging.info('New time entry was added to ticket #{0}'.format(ticket_id))
+            logging.debug(new_time_entry)
+            # If new time entry was added to Freshdesk, add 'freshdesk' tag and ticket id tag if needed to Toggl
+            put_url = TOOGL_URL_PREFIX + 'time_entries/' + str(time_entry['id'])
+            logging.debug(put_url)
+            r_toggl_put = requests.put(put_url,
+                                       data=json.dumps(new_toggl_time_entry),
+                                       auth=(TOOGL_API_TOKEN, 'api_token'),
+                                       headers=headers)
+            if r_toggl_put.status_code not in [200, 201]:
+                logging.error('Failed to add tag \'freshdesk\' to Toggl time entry {0}'.format(time_entry['id']))
+                logging.error(r_toggl_put.text)
+                logging.debug(time_entry)
+                logging.debug(new_toggl_time_entry)
             else:
-                logging.info('New time entry was added to ticket #{0}'.format(ticket_id))
-                logging.debug(new_time_entry)
-                # If new time entry was added to Freshdesk, add 'freshdesk' tag and ticket id tag if needed to Toggl
-                put_url = TOOGL_URL_PREFIX + 'time_entries/' + str(time_entry['id'])
-                logging.debug(put_url)
-                r_toggl_put = requests.put(put_url,
-                                           data=json.dumps(new_toggl_time_entry),
-                                           auth=(TOOGL_API_TOKEN, 'api_token'),
-                                           headers=headers)
-                if r_toggl_put.status_code not in [200, 201]:
-                    logging.error('Failed to add tag \'freshdesk\' to Toggl time entry {0}'.format(time_entry['id']))
-                    logging.error(r_toggl_put.text)
-                    logging.debug(time_entry)
-                    logging.debug(new_toggl_time_entry)
-                else:
-                    logging.info('Added \'freshdesk\' tag to Toggl time entry {0}'.format(time_entry['id']))
-                    logging.debug(r_toggl_put.text)
-                    logging.debug(new_toggl_time_entry)
+                logging.info('Added \'freshdesk\' tag to Toggl time entry {0}'.format(time_entry['id']))
+                logging.debug(r_toggl_put.text)
+                logging.debug(new_toggl_time_entry)
 
 
 if __name__ == '__main__':
